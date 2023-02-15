@@ -1,0 +1,13 @@
+{
+  "name": "com.outbreakstudios.blitser.base",
+  "version": "0.0.1",
+  "description": "Blittable struct serialization",
+  "displayName": "Outbreak Studios - Blitser",
+  "unity": "2021.3",
+  "author": {
+    "name": "Outbreak Studios",
+    "email": "info@outbreakstudios.com",
+    "url": "https://outbreakstudios.com"
+  },
+  "license": "MIT"
+}

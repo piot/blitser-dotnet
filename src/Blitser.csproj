@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net5.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageId>Piot.Blitser</PackageId>
+        <Version>0.0.1</Version>
+        <Nullable>enable</Nullable>
+        <WarningsAsErrors>Nullable</WarningsAsErrors>
+        <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
+        <IntermediateOutputPath>../../output</IntermediateOutputPath>
+        <RootNamespace>Piot.Blitser</RootNamespace>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <AnalysisLevel>latest</AnalysisLevel>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="ClrHeapAllocationAnalyzer" Version="3.0.0" />
+        <PackageReference Include="Piot.Clog" Version="0.0.1" />
+        <PackageReference Include="Piot.Flood" Version="0.0.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Reference Include="Mono.CecilEx">
+            <HintPath>Editor\Plugins\Mono.Cecil\Mono.CecilEx.dll</HintPath>
+        </Reference>
+        <Reference Include="Mono.CecilEx.Rocks">
+            <HintPath>Editor\Plugins\Mono.Cecil\Mono.CecilEx.Rocks.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+
+</Project>

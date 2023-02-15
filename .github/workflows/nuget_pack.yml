@@ -1,0 +1,26 @@
+name: Nuget Pack
+on:
+  push:
+    tags:
+      - '*'
+jobs:
+  pack:
+    name: Pack Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: nowsprinting/check-version-format-action@v3
+        id: version
+        with:
+          prefix: 'v'
+
+      - name: Pack
+        run: dotnet pack /p:Version=${{ steps.version.outputs.full_without_prefix }}
+        working-directory: src/
+
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          path: src/bin/Debug/*.nupkg

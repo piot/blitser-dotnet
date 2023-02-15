@@ -1,0 +1,9 @@
+{
+  "name": "com.outbreakstudios.blitser.base",
+  "references": [
+    "com.outbreakstudios.flood.base"
+  ],
+  "dependencies": {
+    "com.outbreakstudios.flood.base": "0.0.1"
+  }
+}

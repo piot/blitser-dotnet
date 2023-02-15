@@ -1,0 +1,13 @@
+{
+  "name": "com.outbreakstudios.blitser.base.editor",
+  "references": [
+    "com.outbreakstudios.blitser.base",
+    "com.outbreakstudios.flood.base",
+    "com.outbreakstudios.clog.base"
+  ],
+  "dependencies": {
+    "com.outbreakstudios.blitser.base": "0.0.1",
+    "com.outbreakstudios.flood.base": "0.0.1",
+    "com.outbreakstudios.clog.base": "0.0.1"
+  }
+}
