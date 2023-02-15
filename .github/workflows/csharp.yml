@@ -14,7 +14,7 @@ jobs:
           dotnet-version: '6.0.x'
 
       - name: Build dotnet
-        run: dotnet build src/lib
+        run: dotnet build src/
 
       # - name: Test dotnet
       #  run: dotnet test src/tests
