@@ -96,13 +96,20 @@ namespace Piot.Blitser.Generator
                 case nameof(Byte):
                     processor.Emit(OpCodes.Conv_U1);
                     break;
+                case nameof(SByte):
+                    processor.Emit(OpCodes.Conv_U1);
+                    break;
                 case nameof(Boolean):
                     processor.Emit(OpCodes.Ldc_I4_0); // Compare with zero
                     processor.Emit(OpCodes.Cgt_Un);
                     break;
                 case nameof(UInt16):
                     break;
+                case nameof(Int16):
+                    break;
                 case nameof(UInt32):
+                    break;
+                case nameof(Int32):
                     break;
                 default:
                     log.Error("Unknown {Primitive} type", fieldTypeName);

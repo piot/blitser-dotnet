@@ -113,6 +113,32 @@ namespace Piot.Blitser.Generator
         }
 
 
+        public void GenerateAll(AssemblyDefinition compiledAssembly, ILog log)
+        {
+                    
+            var logics = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(LogicAttribute));
+            if (!logics.Any())
+            {
+                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Logics");
+                throw new Exception("skip {compiledAssembly.MainModule.Name} no logics found");
+            }
+            var ghosts = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(GhostAttribute));
+            if (!ghosts.Any())
+            {
+                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Ghosts");
+                throw new Exception("skip {compiledAssembly.MainModule.Name} no ghosts found");
+            }
+        
+            var inputs = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(InputAttribute));
+            if (!inputs.Any())
+            {
+                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Inputs");
+                throw new Exception("skip {compiledAssembly.MainModule.Name} no Inputs found");
+            }
+
+            GenerateDataTypes(logics, ghosts, inputs, log);
+        }
+        
         public void GenerateDataTypes(IEnumerable<TypeDefinition> logics, IEnumerable<TypeDefinition> ghosts, IEnumerable<TypeDefinition> inputs, ILog log)
         {
             this.logics = GenerateDataTypes(logics, log);
@@ -124,7 +150,7 @@ namespace Piot.Blitser.Generator
             CreateDataReceiveDestroy(dataTypeInfos, log);
         }
 
-        IEnumerable<DataClassMeta> GenerateDataTypes(IEnumerable<TypeDefinition> dataTypeReferences, ILog log)
+        public IEnumerable<DataClassMeta> GenerateDataTypes(IEnumerable<TypeDefinition> dataTypeReferences, ILog log)
         {
             var metas = new List<DataClassMeta>();
             foreach (var typedef in dataTypeReferences)
@@ -1073,6 +1099,8 @@ namespace Piot.Blitser.Generator
             AddGeneratedMethod(dataReceiveNewMethod);
 
             generatedDataReceiverNewMethod = dataReceiveNewMethod;
+
+            log.Info("setting {GeneratedDataReceiverNewMethod}", generatedDataReceiverNewMethod);
 
             return dataReceiveNewMethod;
         }
