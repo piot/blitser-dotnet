@@ -30,27 +30,16 @@ Use DataWriter and DataReader to serialize any blittable struct to and from a bi
 ```csharp
 public static class DataStreamWriter
 {
-    public static void Write<T>(T data, IBitWriter bitWriter) where T : struct
-    {
-
-    }
-    public static void Write<T>(in T data, IBitWriter bitWriter, uint mask) where T : struct
-    {
-
-    }
+    public static void Write<T>(T data, IBitWriter bitWriter) where T : struct;
+    public static void Write<T>(in T data, IBitWriter bitWriter, uint mask) where T : struct;
 }
 ```
 
 ```csharp
 public static class DataStreamReader
 {
-    public static T CreateAndRead<T>(IBitReader bitReader) where T : struct
-    {
-    }
-
-    public static uint ReadMask<T>(IBitReader bitReader, ref T data) where T : struct
-    {
-    }
+    public static T CreateAndRead<T>(IBitReader bitReader) where T : struct;
+    public static uint ReadMask<T>(IBitReader bitReader, ref T data) where T : struct;
 }
 ```
 
@@ -61,10 +50,7 @@ To get the unique data type ID for a type use:
 ```csharp
     public static class DataIdFetcher
     {
-        public static ushort Id<T>() where T : struct
-        {
-
-        }
+        public static ushort Id<T>() where T : struct;
     }
 ```
 
@@ -73,10 +59,45 @@ To get the unique data type ID for a type use:
 ```csharp
     public static class DataDiff
     {
-        public static uint Diff<T>(in T a, in T b) where T : struct
-        {
-        }
+        public static uint Diff<T>(in T a, in T b) where T : struct;
     }
+```
+
+### Data Stream Receiver
+
+DataStreamReceiver is useful for deserializing a bitstream. You need to have own deserialization of `entityId` and `dataTypeId` before calling any of these methods.
+
+A class implementing `IDataReceiver` will get the calls with correct types.
+
+```csharp
+public interface IDataReceiver
+{
+    public void ReceiveNew<T>(uint entityId, T data) where T : struct;
+    public void Update<T>(uint mask, uint entityId, T data) where T : struct;
+    public void DestroyComponent<T>(uint entityId) where T : struct;
+
+    public T GrabOrCreate<T>(uint entityId) where T : struct; // This is used by the ReceiveUpdate() method.
+}
+```
+
+```csharp
+public static class DataStreamReceiver
+{
+    public static void ReceiveNew(
+        IBitReader reader,
+        uint entityId,
+        uint dataTypeId,
+        IDataReceiver receiver);
+
+    public static void ReceiveUpdate(
+        IBitReader reader,
+        uint entityId,
+        uint dataTypeId,
+        IDataReceiver receiver);
+
+    public static void ReceiveDestroy(uint entityId, uint dataTypeId, IDataReceiver dataReceiver);
+}
+
 ```
 
 ## Example Generated CIL code
@@ -92,9 +113,9 @@ public enum TestEnum
 
 public struct Position3
 {
-    short x;
-    short y;
-    short z;
+    public short x;
+    public short y;
+    public short z;
 }
 
 
@@ -107,7 +128,7 @@ public struct TestData
 }
 ```
 
-It generates the following CIL (shown as C# code to be easier to read):
+It generates the following CIL (shown as CIL-to-C# converted code to be easier to read):
 
 ### Complete Serialization
 
@@ -174,6 +195,78 @@ public static void SerializeMaskRef_TestData(IBitWriter writer, TestData data, u
 
     Position3Serializer.Write(writer, data.position);
 }
+```
+
+### DataStreamReceiver - Receive New
+
+```csharp
+public static void DataReceiveNew(
+    IBitReader reader,
+    uint entityId,
+    uint dataTypeId,
+    IDataReceiver receiver)
+{
+    switch (dataTypeId)
+    {
+    case 1:
+        receiver.ReceiveNew<TestLogic>(entityId, DataStreamReader.CreateAndRead<TestLogic>(reader));
+        break;
+    case 2:
+        receiver.ReceiveNew<TestData>(entityId, DataStreamReader.CreateAndRead<TestData>(reader));
+        break;
+    case 3:
+        receiver.ReceiveNew<TestInput>(entityId, DataStreamReader.CreateAndRead<TestInput>(reader));
+        break;
+    }
+}
+```
+
+### DataStreamReceiver - Receive Destroy
+
+```csharp
+public static void DataReceiveDestroy(uint entityId, uint dataTypeId, IDataReceiver receiver)
+{
+    switch (dataTypeId)
+    {
+    case 1:
+        receiver.DestroyComponent<TestLogic>(entityId);
+        break;
+    case 2:
+        receiver.DestroyComponent<TestData>(entityId);
+        break;
+    case 3:
+        receiver.DestroyComponent<TestInput>(entityId);
+        break;
+    }
+}
+```
+
+### DataStreamReceiver - Receive Update
+
+```csharp
+public static void DataReceiveUpdate(
+    IBitReader reader,
+    uint entityId,
+    uint dataTypeId,
+    IDataReceiver receiver)
+{
+    switch (dataTypeId)
+    {
+    case 1:
+        TestLogic data1 = receiver.GrabOrCreate<TestLogic>(entityId);
+        receiver.Update<TestLogic>(DataStreamReader.ReadMask<TestLogic>(reader, ref data1), entityId, data1);
+        break;
+    case 2:
+        TestData data2 = receiver.GrabOrCreate<TestData>(entityId);
+        receiver.Update<TestData>(DataStreamReader.ReadMask<TestData>(reader, ref data2), entityId, data2);
+        break;
+    case 3:
+        TestInput data3 = receiver.GrabOrCreate<TestInput>(entityId);
+        receiver.Update<TestInput>(DataStreamReader.ReadMask<TestInput>(reader, ref data3), entityId, data3);
+        break;
+    }
+}
+
 ```
 
 ## Custom Type BitSerializer
