@@ -6,7 +6,7 @@ Blittable struct serialization and deserialization.
 
 ## General
 
-* Generates CIL methods for serialize, deserialize and diff. It supports .NET blittable primitives as well as user defined blittable structs and enums.
+* Generates [CIL](https://en.wikipedia.org/wiki/Common_Intermediate_Language) methods for serialize, deserialize and diff. It supports .NET blittable primitives as well as user defined blittable structs and enums.
 
 ### Limitations
 
@@ -48,19 +48,19 @@ public static class DataStreamReader
 To get the unique data type ID for a type use:
 
 ```csharp
-    public static class DataIdFetcher
-    {
-        public static ushort Id<T>() where T : struct;
-    }
+public static class DataIdFetcher
+{
+    public static ushort Id<T>() where T : struct;
+}
 ```
 
 ### Difference between two blittable structs
 
 ```csharp
-    public static class DataDiff
-    {
-        public static uint Diff<T>(in T a, in T b) where T : struct;
-    }
+public static class DataDiff
+{
+    public static uint Diff<T>(in T a, in T b) where T : struct;
+}
 ```
 
 ### Data Stream Receiver
@@ -171,6 +171,21 @@ public struct TestData
     public TestEnum ability;
     public Position3 position;
 }
+
+[Logic]
+public struct TestLogic
+{
+    public int test;
+}
+
+
+[Input]
+public struct TestInput
+{
+
+    public int test;
+}
+
 ```
 
 It generates the following CIL (shown as CIL-to-C# converted code to be easier to read):
