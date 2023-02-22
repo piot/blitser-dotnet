@@ -144,25 +144,34 @@ public static void DeserializeAllRef_TestData([In] IBitReader reader, ref TestDa
 public static uint DeserializeMaskRef_TestData(IBitReader reader, ref TestData data)
 {
     int num = (int) reader.ReadBits(3);
+
     if ((num & 1) != 0)
-    data.counter = (int) reader.ReadBits(32);
+        data.counter = (int) reader.ReadBits(32);
+
     if ((num & 2) != 0)
-    data.ability = (TestEnum) reader.ReadBits(2);
+        data.ability = (TestEnum) reader.ReadBits(2);
+
     if ((num & 4) == 0)
-    return (uint) num;
+        return (uint) num;
+
     Position3Serializer.Read(reader, out data.position);
+
     return (uint) num;
 }
 
 public static void SerializeMaskRef_TestData(IBitWriter writer, TestData data, uint fieldMask)
 {
     writer.WriteBits(fieldMask, 3);
+
     if (((int) fieldMask & 1) != 0)
-    writer.WriteBits((uint) data.counter, 32);
+        writer.WriteBits((uint) data.counter, 32);
+
     if (((int) fieldMask & 2) != 0)
-    writer.WriteBits((uint) data.ability, 2);
+        writer.WriteBits((uint) data.ability, 2);
+
     if (((int) fieldMask & 4) == 0)
-    return;
+        return;
+
     Position3Serializer.Write(writer, data.position);
 }
 ```
