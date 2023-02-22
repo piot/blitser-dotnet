@@ -100,7 +100,52 @@ public static class DataStreamReceiver
 
 ```
 
+### Event Stream Receiver
+
+Given the `dataTypeId` it will create the proper data struct and call the implementation of the IEventReceiver interface:
+
+```csharp
+public interface IEventReceiver
+{
+    public void ReceiveEvent<T>(in T eventData) where T : struct;
+}
+```
+
+```csharp
+public static class EventStreamReceiver
+{
+    public static void ReceiveFull(IBitReader bitReader, uint dataTypeId, IEventReceiver eventReceiver);
+    public static void Skip(IBitReader reader, uint dataTypeId);
+}
+```
+
+## Custom Type BitSerializer
+
+Mark your custom type serialization class with `BitSerializer`.
+
+```csharp
+[BitSerializer]
+public static class CustomHealthSerializer
+{
+    public static void Write(IBitWriter writer, in CustomHealth health)
+    {
+        writer.WriteBits(health.Value, 5);
+    }
+
+    public static void Read(IBitReader reader, out CustomHealth health)
+    {
+        health = new(reader.ReadBits(5));
+    }
+}
+
+```
+
 ## Example Generated CIL code
+
+This is only included in the documentation to get a deeper understanding of what happens internally.
+You can use Blitser without knowing the internals.
+
+### Example structs
 
 Given the following example structs:
 
@@ -264,27 +309,6 @@ public static void DataReceiveUpdate(
         TestInput data3 = receiver.GrabOrCreate<TestInput>(entityId);
         receiver.Update<TestInput>(DataStreamReader.ReadMask<TestInput>(reader, ref data3), entityId, data3);
         break;
-    }
-}
-
-```
-
-## Custom Type BitSerializer
-
-Mark your custom type serialization class with `BitSerializer`.
-
-```csharp
-[BitSerializer]
-public static class CustomHealthSerializer
-{
-    public static void Write(IBitWriter writer, in CustomHealth health)
-    {
-        writer.WriteBits(health.Value, 5);
-    }
-
-    public static void Read(IBitReader reader, out CustomHealth health)
-    {
-        health = new(reader.ReadBits(5));
     }
 }
 
