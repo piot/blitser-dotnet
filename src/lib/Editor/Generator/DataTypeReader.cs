@@ -34,7 +34,7 @@ namespace Piot.Blitser.Generator
             DataTypeSerialization.EmitBitCountDependingOnType(processor, fieldType, readBitsMethod, log);
         }
 
-        MethodDefinition? CheckIfUserDefinedStaticBitReaderMethodExists(TypeReference dataTypeReference)
+        MethodDefinition? CheckIfUserDefinedStaticBitReaderMethodExists(TypeReference dataTypeReference, ILog log)
         {
             foreach (var module in moduleDefinition.Assembly.Modules)
             {
@@ -47,9 +47,10 @@ namespace Piot.Blitser.Generator
 
                     foreach (var method in type.Methods)
                     {
+                        log.Debug("checking method {Name} {SecondParameter}", method.Name, method.Parameters[1].ParameterType.FullName);
                         //method.IsSpecialName
                         if (method.IsStatic && method.IsPublic && method.Name == "Read" && method.Parameters.Count == 2 && method.Parameters[0].ParameterType.FullName == typeof(IBitReader).FullName &&
-                            method.Parameters[1].ParameterType.FullName == dataTypeReference.FullName)
+                            method.Parameters[1].ParameterType.FullName == dataTypeReference.FullName + "&")
                         {
                             return method;
                         }
@@ -117,7 +118,7 @@ namespace Piot.Blitser.Generator
             }
         }
 
-        MethodReference FindStaticBitReaderMethod(TypeReference dataTypeReference)
+        MethodReference FindStaticBitReaderMethod(TypeReference dataTypeReference, ILog log)
         {
             var internalWriteMethod = readSerializer(dataTypeReference.FullName);
             if (internalWriteMethod is not null)
@@ -125,7 +126,7 @@ namespace Piot.Blitser.Generator
                 return moduleDefinition.ImportReference(internalWriteMethod);
             }
 
-            var userWriteMethod = CheckIfUserDefinedStaticBitReaderMethodExists(dataTypeReference);
+            var userWriteMethod = CheckIfUserDefinedStaticBitReaderMethodExists(dataTypeReference, log);
             if (userWriteMethod is null)
             {
                 throw new Exception($"unknown bit reader method for {dataTypeReference}");
@@ -214,7 +215,7 @@ namespace Piot.Blitser.Generator
             }
             else
             {
-                var foundMethod = FindStaticBitReaderMethod(fieldType);
+                var foundMethod = FindStaticBitReaderMethod(fieldType, log);
                 if (foundMethod is null)
                 {
                     throw new($"couldnt find a bit serializer for {fieldType.FullName} {fieldReference.Name}");

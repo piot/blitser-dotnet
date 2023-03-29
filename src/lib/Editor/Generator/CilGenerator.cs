@@ -57,7 +57,7 @@ namespace Piot.Blitser.Generator
 
         DataTypeWriter dataTypeWriter;
         DataTypeReader dataTypeReader;
-        
+
         public CilGenerator(ModuleDefinition moduleDefinition, CustomAttribute runtimeInitializeOnLoad, Func<string,MethodInfo> writeSerializer, Func<string,MethodInfo> readSerializer)
         {
             initializeOnLoadCustomAttribute = runtimeInitializeOnLoad;
@@ -67,7 +67,7 @@ namespace Piot.Blitser.Generator
 
             var readBitsMethodInfo = typeof(IBitReader).GetMethod(nameof(IBitReader.ReadBits));
             var readBitsMethod = moduleDefinition.ImportReference(readBitsMethodInfo);
-            
+
             bitReaderInterfaceReference = readBitsMethod.DeclaringType;
 
             if (readBitsMethod is null)
@@ -84,7 +84,7 @@ namespace Piot.Blitser.Generator
 
             dataTypeWriter = new (moduleDefinition, writeSerializer, writeBitsMethod);
             dataTypeReader = new(moduleDefinition, readBitsMethod, readSerializer);
-            
+
             bitWriterInterfaceReference = writeBitsMethod.DeclaringType;
 
 
@@ -115,30 +115,30 @@ namespace Piot.Blitser.Generator
 
         public void GenerateAll(AssemblyDefinition compiledAssembly, ILog log)
         {
-                    
+
             var logics = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(LogicAttribute));
             if (!logics.Any())
             {
                 log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Logics");
-                throw new Exception("skip {compiledAssembly.MainModule.Name} no logics found");
+                //throw new Exception("skip {compiledAssembly.MainModule.Name} no logics found");
             }
             var ghosts = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(GhostAttribute));
             if (!ghosts.Any())
             {
                 log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Ghosts");
-                throw new Exception("skip {compiledAssembly.MainModule.Name} no ghosts found");
+                //throw new Exception("skip {compiledAssembly.MainModule.Name} no ghosts found");
             }
-        
+
             var inputs = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(InputAttribute));
             if (!inputs.Any())
             {
-                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Inputs");
+                //log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Inputs");
                 throw new Exception("skip {compiledAssembly.MainModule.Name} no Inputs found");
             }
 
             GenerateDataTypes(logics, ghosts, inputs, log);
         }
-        
+
         public void GenerateDataTypes(IEnumerable<TypeDefinition> logics, IEnumerable<TypeDefinition> ghosts, IEnumerable<TypeDefinition> inputs, ILog log)
         {
             this.logics = GenerateDataTypes(logics, log);
@@ -155,7 +155,7 @@ namespace Piot.Blitser.Generator
             var metas = new List<DataClassMeta>();
             foreach (var typedef in dataTypeReferences)
             {
-                var dataClassMeta = GenerateDataType(typedef, log);    
+                var dataClassMeta = GenerateDataType(typedef, log);
                 metas.Add(dataClassMeta);
             }
 
@@ -165,7 +165,7 @@ namespace Piot.Blitser.Generator
         DataClassMeta GenerateDataType(TypeDefinition dataTypeReference, ILog log)
         {
             var dataTypeInfo = CreateDataClassMeta(dataTypeReference, log);
-            
+
             CreateDeserializeAllMethod(dataTypeInfo, log);
             CreateDeserializeAllRefMethod(dataTypeInfo, log);
             CreateDeserializeMaskRefMethod(dataTypeInfo, log);
@@ -183,9 +183,8 @@ namespace Piot.Blitser.Generator
             CreateInitOnLoadMethod();
         }
 
-        public static string UnityEngineInternalDllDirectory()
+        public static string ExecutingEngineInternalDllDirectory()
         {
-            // can maybe use Application.dataPath as well?
             var directoryName = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (directoryName is null)
             {
@@ -782,7 +781,7 @@ namespace Piot.Blitser.Generator
 
                 // IBitWriter
                 processor.Emit(OpCodes.Ldarg_0);
-                // Data 
+                // Data
                 processor.Emit(OpCodes.Ldarg_1);
 
                 // Load field
@@ -829,7 +828,7 @@ namespace Piot.Blitser.Generator
             {
                 // IBitReader
                 processor.Emit(OpCodes.Ldarg_0);
-                // Data 
+                // Data
                 processor.Emit(OpCodes.Ldarg_1);
 
                 // Load field
@@ -1033,8 +1032,9 @@ namespace Piot.Blitser.Generator
             return field.IsPublic;
         }
 
-        public MethodDefinition CreateCommonDataReceiveMethod(string generatedMethodName)
+        public MethodDefinition CreateCommonDataReceiveMethod(string generatedMethodName, ILog log)
         {
+            log.Debug("create common data receive {Name}", generatedMethodName);
             var uint32Reference = moduleDefinition.ImportReference(typeof(uint));
             var voidReturnReference = moduleDefinition.ImportReference(typeof(void));
             var dataReceiveNewMethod = new MethodDefinition(generatedMethodName,
@@ -1059,7 +1059,7 @@ namespace Piot.Blitser.Generator
 
         public MethodDefinition CreateDataReceiveNew(IEnumerable<DataClassMeta> dataClassMetas, ILog log)
         {
-            var dataReceiveNewMethod = CreateCommonDataReceiveMethod("DataReceiveNew");
+            var dataReceiveNewMethod = CreateCommonDataReceiveMethod("DataReceiveNew", log);
 
             var processor = dataReceiveNewMethod.Body.GetILProcessor();
 
@@ -1107,7 +1107,7 @@ namespace Piot.Blitser.Generator
 
         public MethodDefinition CreateDataReceiveUpdate(IEnumerable<DataClassMeta> dataClassMetas, ILog log)
         {
-            var dataReceiveNewMethod = CreateCommonDataReceiveMethod("DataReceiveUpdate");
+            var dataReceiveNewMethod = CreateCommonDataReceiveMethod("DataReceiveUpdate", log);
 
             var processor = dataReceiveNewMethod.Body.GetILProcessor();
 
@@ -1279,7 +1279,7 @@ namespace Piot.Blitser.Generator
             {
                 this.uniqueId = uniqueId;
                 dataStructTypeReference = typeReference;
-                
+
                 this.resolvedDataStructType = resolvedDataStructType;
                 resolvedDataStructTypeByReference = new(resolvedDataStructType);
             }
