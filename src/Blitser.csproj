@@ -11,15 +11,15 @@
         <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
         <IntermediateOutputPath>../../output</IntermediateOutputPath>
         <RootNamespace>Piot.Blitser</RootNamespace>
-        <EnableNETAnalyzers>true</EnableNETAnalyzers>
-        <AnalysisLevel>latest</AnalysisLevel>
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="ClrHeapAllocationAnalyzer" Version="3.0.0" />
         <PackageReference Include="Piot.Clog" Version="0.0.1" />
         <PackageReference Include="Piot.Flood" Version="0.0.1" />
-    </ItemGroup>
+
+           <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.0.1" />
+            </ItemGroup>
 
     <ItemGroup>
         <Reference Include="Mono.CecilEx">

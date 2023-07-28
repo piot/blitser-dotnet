@@ -9,7 +9,7 @@ namespace Piot.Blitser
 {
     public static class DataStreamWriter
     {
-        public static void Write<T>(T data, IBitWriter bitWriter) where T : struct
+        public static void Write<T>(T data, IBitWriter bitWriter) where T : unmanaged
         {
             if (DataWriter<T>.write is null)
             {
@@ -19,7 +19,7 @@ namespace Piot.Blitser
             DataWriter<T>.write(bitWriter, data);
         }
 
-        public static void Write<T>(in T data, IBitWriter bitWriter, uint mask) where T : struct
+        public static void Write<T>(in T data, IBitWriter bitWriter, uint mask) where T : unmanaged
         {
             if (DataWriter<T>.writeMask is null)
             {

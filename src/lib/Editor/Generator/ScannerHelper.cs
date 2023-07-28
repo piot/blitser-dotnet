@@ -36,6 +36,19 @@ namespace Piot.Blitser.Generator
 
             return false;
         }
+        
+        public static bool FieldHasAttribute(FieldDefinition field, string name)
+        {
+            foreach (var custom in field.CustomAttributes)
+            {
+                if (custom.AttributeType.Name == name)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public static bool IsStruct(TypeDefinition t)
         {

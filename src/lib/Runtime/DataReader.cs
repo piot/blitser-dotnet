@@ -10,7 +10,7 @@ using Piot.Flood;
 
 namespace Piot.Blitser
 {
-    public static class DataReader<T> where T : struct
+    public static class DataReader<T> where T : unmanaged
     {
         public delegate uint ReadMaskDelegate(IBitReader reader, ref T data);
         public static Func<IBitReader, T>? read;

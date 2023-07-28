@@ -4,15 +4,18 @@
  *--------------------------------------------------------------------------------------------*/
 
 using System;
-using Piot.Flood;
+using System.Runtime.InteropServices;
 
 // ReSharper disable UnassignedField.Global
 
 namespace Piot.Blitser
 {
-    public static class DataWriter<T> where T : unmanaged
+    public static class DataCopy
     {
-        public static Action<IBitWriter, T>? write;
-        public static Action<IBitWriter, T, uint>? writeMask;
+        public static int ToBytes<T>(Span<byte> target, ref T data) where T : unmanaged
+        {
+            MemoryMarshal.Write(target, ref data);
+            return Marshal.SizeOf(typeof(T));
+        }
     }
 }

@@ -3,3 +3,4 @@ output/
 bin/
 obj/
 
+.DS_Store

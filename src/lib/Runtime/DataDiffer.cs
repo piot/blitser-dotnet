@@ -6,7 +6,7 @@
 // ReSharper disable UnassignedField.Global
 namespace Piot.Blitser
 {
-    public static class DataDiffer<T> where T : struct
+    public static class DataDiffer<T> where T : unmanaged
     {
         public delegate uint DiffDelegate(in T a, in T b);
         public static DiffDelegate? diff;

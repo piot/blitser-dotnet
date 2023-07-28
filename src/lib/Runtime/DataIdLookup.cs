@@ -6,7 +6,7 @@
 // ReSharper disable UnusedTypeParameter
 namespace Piot.Blitser
 {
-    public static class DataIdLookup<T> where T : struct
+    public static class DataIdLookup<T> where T : unmanaged
     {
         public static ushort value;
     }

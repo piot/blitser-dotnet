@@ -13,6 +13,8 @@ using Mono.CecilEx.Cil;
 using Mono.CecilEx.Rocks;
 using Piot.Clog;
 using Piot.Flood;
+using UnityEngine;
+using FieldAttributes = Mono.CecilEx.FieldAttributes;
 using MethodAttributes = Mono.CecilEx.MethodAttributes;
 using OpCode = Mono.CecilEx.Cil.OpCode;
 using OpCodes = Mono.CecilEx.Cil.OpCodes;
@@ -44,21 +46,20 @@ namespace Piot.Blitser.Generator
         DataClassMeta? currentData;
 
         public readonly List<DataClassMeta> dataTypeInfos = new();
-        IEnumerable<DataClassMeta> logics = ArraySegment<DataClassMeta>.Empty;
-        IEnumerable<DataClassMeta> ghosts = ArraySegment<DataClassMeta>.Empty;
-        IEnumerable<DataClassMeta> inputs = ArraySegment<DataClassMeta>.Empty;
+        IEnumerable<DataClassMeta> replicatedComponents = ArraySegment<DataClassMeta>.Empty;
 
         public MethodReference? generatedDataReceiverDestroyMethod;
 
         public MethodReference? generatedDataReceiverNewMethod;
         public MethodReference? generatedDataReceiverUpdateMethod;
 
-        uint lastUniqueId;
+        uint lastUniqueId = 1;
 
         DataTypeWriter dataTypeWriter;
         DataTypeReader dataTypeReader;
 
-        public CilGenerator(ModuleDefinition moduleDefinition, CustomAttribute runtimeInitializeOnLoad, Func<string,MethodInfo> writeSerializer, Func<string,MethodInfo> readSerializer)
+        public CilGenerator(ModuleDefinition moduleDefinition, CustomAttribute runtimeInitializeOnLoad,
+            Func<string, MethodInfo> writeSerializer, Func<string, MethodInfo> readSerializer)
         {
             initializeOnLoadCustomAttribute = runtimeInitializeOnLoad;
             this.moduleDefinition = moduleDefinition;
@@ -82,7 +83,7 @@ namespace Piot.Blitser.Generator
                 throw new("Internal error. Can not find WriteBits");
             }
 
-            dataTypeWriter = new (moduleDefinition, writeSerializer, writeBitsMethod);
+            dataTypeWriter = new(moduleDefinition, writeSerializer, writeBitsMethod);
             dataTypeReader = new(moduleDefinition, readBitsMethod, readSerializer);
 
             bitWriterInterfaceReference = writeBitsMethod.DeclaringType;
@@ -104,67 +105,59 @@ namespace Piot.Blitser.Generator
             dataReceiverGrabOrCreateMethodReference = moduleDefinition.ImportReference(dataReceiverGetMethodInfo);
 
 
-            var dataStreamReaderCreateAndReadMethodInfo = typeof(DataStreamReader).GetMethod(nameof(DataStreamReader.CreateAndRead));
-            genericDataStreamReaderCreateAndReadReference = moduleDefinition.ImportReference(dataStreamReaderCreateAndReadMethodInfo);
+            var dataStreamReaderCreateAndReadMethodInfo =
+                typeof(DataStreamReader).GetMethod(nameof(DataStreamReader.CreateAndRead));
+            genericDataStreamReaderCreateAndReadReference =
+                moduleDefinition.ImportReference(dataStreamReaderCreateAndReadMethodInfo);
 
 
-            var dataStreamReaderReadMaskMethodInfo = typeof(DataStreamReader).GetMethod(nameof(DataStreamReader.ReadMask));
-            genericDataStreamReaderReadMaskMethodReference = moduleDefinition.ImportReference(dataStreamReaderReadMaskMethodInfo);
+            var dataStreamReaderReadMaskMethodInfo =
+                typeof(DataStreamReader).GetMethod(nameof(DataStreamReader.ReadMask));
+            genericDataStreamReaderReadMaskMethodReference =
+                moduleDefinition.ImportReference(dataStreamReaderReadMaskMethodInfo);
         }
 
 
         public void GenerateAll(AssemblyDefinition compiledAssembly, ILog log)
         {
-
-            var logics = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(LogicAttribute));
-            if (!logics.Any())
+            var replicatedStructs =
+                AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly },
+                    typeof(ReplicateComponentAttribute));
+            if (!replicatedStructs.Any())
             {
-                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Logics");
+                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to replicated components");
                 //throw new Exception("skip {compiledAssembly.MainModule.Name} no logics found");
             }
-            var ghosts = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(GhostAttribute));
-            if (!ghosts.Any())
-            {
-                log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Ghosts");
-                //throw new Exception("skip {compiledAssembly.MainModule.Name} no ghosts found");
-            }
 
-            var inputs = AttributeScanner.ScanForStructWithAttribute(log, new[] { compiledAssembly }, typeof(InputAttribute));
-            if (!inputs.Any())
-            {
-                //log.Debug($"Skip {compiledAssembly.MainModule.Name}, since it has no references to Inputs");
-                throw new Exception("skip {compiledAssembly.MainModule.Name} no Inputs found");
-            }
-
-            GenerateDataTypes(logics, ghosts, inputs, log);
+            GenerateDataTypes(replicatedStructs, log);
         }
 
-        public void GenerateDataTypes(IEnumerable<TypeDefinition> logics, IEnumerable<TypeDefinition> ghosts, IEnumerable<TypeDefinition> inputs, ILog log)
+        public void GenerateDataTypes(IEnumerable<TypeDefinition> replicatedStructs,
+            ILog log)
         {
-            this.logics = GenerateDataTypes(logics, log);
-            this.ghosts = GenerateDataTypes(ghosts, log);
-            this.inputs = GenerateDataTypes(inputs, log);
+            this.replicatedComponents = GenerateDataTypes(replicatedStructs, typeof(ReplicateAttribute), log);
 
             CreateDataReceiveNew(dataTypeInfos, log);
             CreateDataReceiveUpdate(dataTypeInfos, log);
             CreateDataReceiveDestroy(dataTypeInfos, log);
         }
 
-        public IEnumerable<DataClassMeta> GenerateDataTypes(IEnumerable<TypeDefinition> dataTypeReferences, ILog log)
+        public IEnumerable<DataClassMeta> GenerateDataTypes(IEnumerable<TypeDefinition> dataTypeReferences,
+            Type? fieldAttributeToFilterFor, ILog log)
         {
             var metas = new List<DataClassMeta>();
             foreach (var typedef in dataTypeReferences)
             {
-                var dataClassMeta = GenerateDataType(typedef, log);
+                var dataClassMeta = GenerateDataType(typedef, fieldAttributeToFilterFor, log);
                 metas.Add(dataClassMeta);
             }
 
             return metas;
         }
 
-        DataClassMeta GenerateDataType(TypeDefinition dataTypeReference, ILog log)
+        DataClassMeta GenerateDataType(TypeDefinition dataTypeReference, Type? fieldAttributeToFilterOn, ILog log)
         {
-            var dataTypeInfo = CreateDataClassMeta(dataTypeReference, log);
+            var dataTypeInfo = CreateDataClassMeta(dataTypeReference, fieldAttributeToFilterOn, log);
 
             CreateDeserializeAllMethod(dataTypeInfo, log);
             CreateDeserializeAllRefMethod(dataTypeInfo, log);
@@ -217,7 +210,8 @@ namespace Piot.Blitser.Generator
         {
             if (!resolvedDataStructType.IsValueType)
             {
-                log.Error("The type {Type} is not a valid Data Type (must be struct value type)", resolvedDataStructType.Name);
+                log.Error("The type {Type} is not a valid Data Type (must be struct value type)",
+                    resolvedDataStructType.Name);
                 throw new("The type {Type} is not a valid Data Type (must be struct value type)");
             }
 
@@ -225,21 +219,31 @@ namespace Piot.Blitser.Generator
             {
                 if (field.IsNotSerialized || field.IsStatic || field.IsPrivate)
                 {
-                    log.Notice("Can not serialize field {FieldName} in type {TypeName}. Must be public, instance field and not marked as [NotSerialized]", field.Name, resolvedDataStructType.Name);
+                    log.Notice(
+                        "Can not serialize field {FieldName} in type {TypeName}. Must be public, instance field and not marked as [NotSerialized]",
+                        field.Name, resolvedDataStructType.Name);
                     throw new($"Can not serialize field {field.Name} in {resolvedDataStructType.Name}");
                 }
             }
         }
 
-        public DataClassMeta CreateDataClassMeta(TypeReference dataClassType, ILog log)
+        public DataClassMeta CreateDataClassMeta(TypeReference dataClassType, Type? fieldAttributeToFilterFor, ILog log)
         {
             var resolvedDataStructType = dataClassType.Resolve();
             VerifyDataClassType(resolvedDataStructType, log);
             moduleDefinition.ImportReference(dataClassType);
 
+            ICollection<FieldDefinition> fields = resolvedDataStructType.Fields;
+
+            if (fieldAttributeToFilterFor is not null)
+            {
+                fields = AttributeScanner.ScanForFieldWithAttribute(log, resolvedDataStructType,
+                    typeof(ReplicateAttribute));
+            }
+
             lastUniqueId++;
 
-            currentData = new(lastUniqueId, dataClassType, resolvedDataStructType);
+            currentData = new(lastUniqueId, dataClassType, resolvedDataStructType, fields);
 
             dataTypeInfos.Add(currentData);
 
@@ -292,7 +296,6 @@ namespace Piot.Blitser.Generator
             return new("InitOnLoad", MethodAttributes.Public |
                                      MethodAttributes.Static,
                 moduleDefinition.ImportReference(typeof(void)));
-
         }
 
         public MethodDefinition CreateDeserializeAllMethod(DataClassMeta dataTypeInfo, ILog log)
@@ -309,7 +312,7 @@ namespace Piot.Blitser.Generator
             processor.Emit(OpCodes.Ldloca_S, (byte)0);
             processor.Emit(OpCodes.Initobj, dataTypeInfo.resolvedDataStructType);
 
-            dataTypeReader.EmitDataTypeStructReader(processor, dataTypeInfo.resolvedDataStructType.Fields, true, log);
+            dataTypeReader.EmitDataTypeStructReader(processor, dataTypeInfo.resolvedFieldsToSerialize, true, log);
 
             // Load back our instance data type and return it
             processor.Emit(OpCodes.Ldloc_0);
@@ -324,10 +327,12 @@ namespace Piot.Blitser.Generator
 
         public MethodDefinition CreateDeserializeAllRefMethod(DataClassMeta dataTypeInfo, ILog log)
         {
-            var deserializeMethod = CreatePublicStaticMethodForTypeVoidReturn("DeserializeAllRef", dataTypeInfo.resolvedDataStructType);
+            var deserializeMethod =
+                CreatePublicStaticMethodForTypeVoidReturn("DeserializeAllRef", dataTypeInfo.resolvedDataStructType);
 
             deserializeMethod.Parameters.Add(new("reader", ParameterAttributes.In, bitReaderInterfaceReference));
-            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructTypeByReference);
+            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None,
+                dataTypeInfo.resolvedDataStructTypeByReference);
 
             //Assert.IsTrue(dataReferenceParameter.ParameterType.IsByReference);
             deserializeMethod.Parameters.Add(dataReferenceParameter);
@@ -335,7 +340,7 @@ namespace Piot.Blitser.Generator
 
             var processor = deserializeMethod.Body.GetILProcessor();
 
-            dataTypeReader.EmitDataTypeStructReader(processor, dataTypeInfo.resolvedDataStructType.Fields, false, log);
+            dataTypeReader.EmitDataTypeStructReader(processor, dataTypeInfo.resolvedFieldsToSerialize, false, log);
 
             processor.Emit(OpCodes.Ret);
 
@@ -347,10 +352,12 @@ namespace Piot.Blitser.Generator
 
         public MethodDefinition CreateDeserializeMaskRefMethod(DataClassMeta dataTypeInfo, ILog log)
         {
-            var deserializeMethod = CreatePublicStaticMethodForTypeUInt32Return("DeserializeMaskRef", dataTypeInfo.resolvedDataStructType);
+            var deserializeMethod =
+                CreatePublicStaticMethodForTypeUInt32Return("DeserializeMaskRef", dataTypeInfo.resolvedDataStructType);
 
             deserializeMethod.Parameters.Add(new("reader", ParameterAttributes.None, bitReaderInterfaceReference));
-            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructTypeByReference);
+            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None,
+                dataTypeInfo.resolvedDataStructTypeByReference);
 
             //Assert.IsTrue(dataReferenceParameter.ParameterType.IsByReference);
             deserializeMethod.Parameters.Add(dataReferenceParameter);
@@ -358,13 +365,14 @@ namespace Piot.Blitser.Generator
 
             var processor = deserializeMethod.Body.GetILProcessor();
 
-            var maskBitCount = dataTypeInfo.resolvedDataStructType.Fields.Count;
+            var maskBitCount = dataTypeInfo.resolvedFieldsToSerialize.Count();
             var shouldUseBitMaskChecks = maskBitCount > 1;
 
             if (shouldUseBitMaskChecks)
             {
                 processor.Emit(OpCodes.Ldarg_0);
-                DataTypeSerialization.EmitCallMethodWithBitCount(processor, dataTypeReader.ReadBitsMethod, maskBitCount);
+                DataTypeSerialization.EmitCallMethodWithBitCount(processor, dataTypeReader.ReadBitsMethod,
+                    maskBitCount);
             }
             else
             {
@@ -374,7 +382,7 @@ namespace Piot.Blitser.Generator
 
             var index = 0;
             Instruction? skipLabel = null;
-            foreach (var field in dataTypeInfo.resolvedDataStructType.Fields)
+            foreach (var field in dataTypeInfo.resolvedFieldsToSerialize)
             {
                 if (shouldUseBitMaskChecks && skipLabel is not null)
                 {
@@ -424,6 +432,14 @@ namespace Piot.Blitser.Generator
             return moduleDefinition.ImportReference(reference);
         }
 
+        public static MethodReference SpecializeMethod(ModuleDefinition moduleDefinition, MethodReference method, TypeReference specializeForType)
+        {
+            var instance = new GenericInstanceMethod(method);
+            instance.GenericArguments.Add(specializeForType);
+
+            return moduleDefinition.ImportReference(instance);
+        }
+        
         MethodReference SpecializeMethod(MethodReference method, TypeReference specializeForType)
         {
             var instance = new GenericInstanceMethod(method);
@@ -432,11 +448,13 @@ namespace Piot.Blitser.Generator
             return moduleDefinition.ImportReference(instance);
         }
 
-        MethodReference SpecializeInstanceGenericIntoDeclaringType(MethodReference method, GenericInstanceType instanceType)
+        MethodReference SpecializeInstanceGenericIntoDeclaringType(MethodReference method,
+            GenericInstanceType instanceType)
         {
             var methodReference = new MethodReference(method.Name, method.ReturnType, instanceType)
             {
-                CallingConvention = method.CallingConvention, HasThis = method.HasThis, ExplicitThis = method.ExplicitThis
+                CallingConvention = method.CallingConvention, HasThis = method.HasThis,
+                ExplicitThis = method.ExplicitThis
             };
 
             foreach (var parameter in method.Parameters)
@@ -452,75 +470,103 @@ namespace Piot.Blitser.Generator
             return moduleDefinition.ImportReference(methodReference);
         }
 
-        void CreateFuncDelegateBitReaderToDataType(ILProcessor processor, MethodReference functionToBind, TypeReference dataTypeReference)
+        void CreateFuncDelegateBitReaderToDataType(ILProcessor processor, MethodReference functionToBind,
+            TypeReference dataTypeReference)
         {
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
             var funcWithTwoParametersDelegateReference = moduleDefinition.ImportReference(typeof(Func<,>));
-            var funcWithBitReaderAndDataTypeReference = funcWithTwoParametersDelegateReference.MakeGenericInstanceType(bitReaderInterfaceReference, dataTypeReference);
+            var funcWithBitReaderAndDataTypeReference =
+                funcWithTwoParametersDelegateReference.MakeGenericInstanceType(bitReaderInterfaceReference,
+                    dataTypeReference);
 
-            var funcWithTwoParametersDelegateConstructorReference = moduleDefinition.ImportReference(typeof(Func<,>).GetConstructors()[0]);
-            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(funcWithTwoParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
+            var funcWithTwoParametersDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(Func<,>).GetConstructors()[0]);
+            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(
+                funcWithTwoParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
             processor.Emit(OpCodes.Newobj, funcConstructorInstance);
         }
 
-        void CreateFuncDelegateBitReaderToDataTypeAndMask(ILProcessor processor, MethodReference functionToBind, TypeReference dataTypeReference, ByReferenceType byReferenceType)
+        void CreateFuncDelegateBitReaderToDataTypeAndMask(ILProcessor processor, MethodReference functionToBind,
+            TypeReference dataTypeReference, ByReferenceType byReferenceType)
         {
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
 
-            var genericReadMaskDelegateTypeReference = moduleDefinition.ImportReference(typeof(DataReader<>.ReadMaskDelegate));
-            var specializedReadMaskDelegateTypeReference = genericReadMaskDelegateTypeReference.MakeGenericInstanceType(dataTypeReference);
+            var genericReadMaskDelegateTypeReference =
+                moduleDefinition.ImportReference(typeof(DataReader<>.ReadMaskDelegate));
+            var specializedReadMaskDelegateTypeReference =
+                genericReadMaskDelegateTypeReference.MakeGenericInstanceType(dataTypeReference);
 
 
-            var genericReadMaskDelegateConstructorReference = moduleDefinition.ImportReference(typeof(DataReader<>.ReadMaskDelegate).GetConstructors()[0]);
-            var specializedDelegateConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(genericReadMaskDelegateConstructorReference, specializedReadMaskDelegateTypeReference);
+            var genericReadMaskDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(DataReader<>.ReadMaskDelegate).GetConstructors()[0]);
+            var specializedDelegateConstructorInstance =
+                SpecializeInstanceGenericIntoDeclaringType(genericReadMaskDelegateConstructorReference,
+                    specializedReadMaskDelegateTypeReference);
 
             processor.Emit(OpCodes.Newobj, specializedDelegateConstructorInstance);
         }
 
-        void CreateDataDifferDelegateInstance(ILProcessor processor, MethodReference functionToBind, TypeReference dataTypeReference)
+        void CreateDataDifferDelegateInstance(ILProcessor processor, MethodReference functionToBind,
+            TypeReference dataTypeReference)
         {
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
 
             var genericDiffDelegateTypeReference = moduleDefinition.ImportReference(typeof(DataDiffer<>.DiffDelegate));
-            var specializedDiffDelegateTypeReference = genericDiffDelegateTypeReference.MakeGenericInstanceType(dataTypeReference);
+            var specializedDiffDelegateTypeReference =
+                genericDiffDelegateTypeReference.MakeGenericInstanceType(dataTypeReference);
 
 
-            var genericDiffDelegateConstructor = moduleDefinition.ImportReference(typeof(DataDiffer<>.DiffDelegate).GetConstructors()[0]);
-            var specializedDelegateConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(genericDiffDelegateConstructor, specializedDiffDelegateTypeReference);
+            var genericDiffDelegateConstructor =
+                moduleDefinition.ImportReference(typeof(DataDiffer<>.DiffDelegate).GetConstructors()[0]);
+            var specializedDelegateConstructorInstance =
+                SpecializeInstanceGenericIntoDeclaringType(genericDiffDelegateConstructor,
+                    specializedDiffDelegateTypeReference);
 
             processor.Emit(OpCodes.Newobj, specializedDelegateConstructorInstance);
         }
 
-        void CreateActionDelegateBitWriterToDataType(ILProcessor processor, MethodReference functionToBind, TypeReference dataTypeReference)
+        void CreateActionDelegateBitWriterToDataType(ILProcessor processor, MethodReference functionToBind,
+            TypeReference dataTypeReference)
         {
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
             var funcWithTwoParametersDelegateReference = moduleDefinition.ImportReference(typeof(Action<,>));
-            var funcWithBitReaderAndDataTypeReference = funcWithTwoParametersDelegateReference.MakeGenericInstanceType(bitWriterInterfaceReference, dataTypeReference);
+            var funcWithBitReaderAndDataTypeReference =
+                funcWithTwoParametersDelegateReference.MakeGenericInstanceType(bitWriterInterfaceReference,
+                    dataTypeReference);
 
-            var funcWithTwoParametersDelegateConstructorReference = moduleDefinition.ImportReference(typeof(Action<,>).GetConstructors()[0]);
-            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(funcWithTwoParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
+            var funcWithTwoParametersDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(Action<,>).GetConstructors()[0]);
+            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(
+                funcWithTwoParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
             processor.Emit(OpCodes.Newobj, funcConstructorInstance);
         }
 
-        void CreateActionDelegateBitWriterToDataTypeAndMask(ILProcessor processor, MethodReference functionToBind, TypeReference dataTypeReference)
+        void CreateActionDelegateBitWriterToDataTypeAndMask(ILProcessor processor, MethodReference functionToBind,
+            TypeReference dataTypeReference)
         {
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
-            var funcWithTwoParametersAndReturnParametersDelegateReference = moduleDefinition.ImportReference(typeof(Action<,,>));
+            var funcWithTwoParametersAndReturnParametersDelegateReference =
+                moduleDefinition.ImportReference(typeof(Action<,,>));
             var uint32Reference = moduleDefinition.ImportReference(typeof(uint));
-            var funcWithBitReaderAndDataTypeReference = funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(bitWriterInterfaceReference, dataTypeReference, uint32Reference);
+            var funcWithBitReaderAndDataTypeReference =
+                funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(
+                    bitWriterInterfaceReference, dataTypeReference, uint32Reference);
 
-            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference = moduleDefinition.ImportReference(typeof(Action<,,>).GetConstructors()[0]);
-            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(funcWithTwoParametersAndReturnParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
+            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(Action<,,>).GetConstructors()[0]);
+            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(
+                funcWithTwoParametersAndReturnParametersDelegateConstructorReference,
+                funcWithBitReaderAndDataTypeReference);
             processor.Emit(OpCodes.Newobj, funcConstructorInstance);
         }
 
@@ -530,12 +576,18 @@ namespace Piot.Blitser.Generator
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
-            var funcWithTwoParametersAndReturnParametersDelegateReference = moduleDefinition.ImportReference(typeof(Action<,,,>));
+            var funcWithTwoParametersAndReturnParametersDelegateReference =
+                moduleDefinition.ImportReference(typeof(Action<,,,>));
             var uint32Reference = moduleDefinition.ImportReference(typeof(uint));
-            var funcWithBitReaderAndDataTypeReference = funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(bitReaderInterfaceReference, uint32Reference, uint32Reference, dataReceiverInterfaceReference);
+            var funcWithBitReaderAndDataTypeReference =
+                funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(
+                    bitReaderInterfaceReference, uint32Reference, uint32Reference, dataReceiverInterfaceReference);
 
-            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference = moduleDefinition.ImportReference(typeof(Action<,,,>).GetConstructors()[0]);
-            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(funcWithTwoParametersAndReturnParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
+            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(Action<,,,>).GetConstructors()[0]);
+            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(
+                funcWithTwoParametersAndReturnParametersDelegateConstructorReference,
+                funcWithBitReaderAndDataTypeReference);
             processor.Emit(OpCodes.Newobj, funcConstructorInstance);
         }
 
@@ -545,12 +597,18 @@ namespace Piot.Blitser.Generator
             processor.Emit(OpCodes.Ldnull);
             processor.Emit(OpCodes.Ldftn, functionToBind);
 
-            var funcWithTwoParametersAndReturnParametersDelegateReference = moduleDefinition.ImportReference(typeof(Action<,,>));
+            var funcWithTwoParametersAndReturnParametersDelegateReference =
+                moduleDefinition.ImportReference(typeof(Action<,,>));
             var uint32Reference = moduleDefinition.ImportReference(typeof(uint));
-            var funcWithBitReaderAndDataTypeReference = funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(uint32Reference, uint32Reference, dataReceiverInterfaceReference);
+            var funcWithBitReaderAndDataTypeReference =
+                funcWithTwoParametersAndReturnParametersDelegateReference.MakeGenericInstanceType(uint32Reference,
+                    uint32Reference, dataReceiverInterfaceReference);
 
-            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference = moduleDefinition.ImportReference(typeof(Action<,,>).GetConstructors()[0]);
-            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(funcWithTwoParametersAndReturnParametersDelegateConstructorReference, funcWithBitReaderAndDataTypeReference);
+            var funcWithTwoParametersAndReturnParametersDelegateConstructorReference =
+                moduleDefinition.ImportReference(typeof(Action<,,>).GetConstructors()[0]);
+            var funcConstructorInstance = SpecializeInstanceGenericIntoDeclaringType(
+                funcWithTwoParametersAndReturnParametersDelegateConstructorReference,
+                funcWithBitReaderAndDataTypeReference);
             processor.Emit(OpCodes.Newobj, funcConstructorInstance);
         }
 
@@ -581,7 +639,10 @@ namespace Piot.Blitser.Generator
             foreach (var dataMeta in dataTypeInfos)
             {
                 processor.Emit(OpCodes.Ldc_I4, (int)dataMeta.uniqueId);
-                var specializedDataIdInstanceType = genericDataIdLookupDef.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                var specializedDataIdInstanceType =
+                    genericDataIdLookupDef.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                
+                Debug.Log($"Setting Unique value {dataMeta.uniqueId}");
                 var specializeField = SpecializeField(genericValueFieldRef, specializedDataIdInstanceType);
                 processor.Emit(OpCodes.Stsfld, specializeField);
             }
@@ -610,79 +671,101 @@ namespace Piot.Blitser.Generator
             foreach (var dataMeta in dataTypeInfos)
             {
                 {
-                    CreateFuncDelegateBitReaderToDataType(processor, dataMeta.readFullMethodReference!, dataMeta.dataStructTypeReference);
+                    CreateFuncDelegateBitReaderToDataType(processor, dataMeta.readFullMethodReference!,
+                        dataMeta.dataStructTypeReference);
 
-                    var specializedDataReaderForDataType = genericDataReaderStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
-                    var specializedDataReaderField = SpecializeField(readDelegateFieldReference, specializedDataReaderForDataType);
+                    var specializedDataReaderForDataType =
+                        genericDataReaderStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                    var specializedDataReaderField =
+                        SpecializeField(readDelegateFieldReference, specializedDataReaderForDataType);
                     processor.Emit(OpCodes.Stsfld, specializedDataReaderField);
                 }
 
                 {
-                    CreateFuncDelegateBitReaderToDataTypeAndMask(processor, dataMeta.readMaskMethodReference!, dataMeta.dataStructTypeReference, dataMeta.resolvedDataStructTypeByReference);
+                    CreateFuncDelegateBitReaderToDataTypeAndMask(processor, dataMeta.readMaskMethodReference!,
+                        dataMeta.dataStructTypeReference, dataMeta.resolvedDataStructTypeByReference);
 
-                    var specializedDataReaderForDataType = genericDataReaderStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
-                    var specializedDataReaderField = SpecializeField(readMaskDelegateFieldReference, specializedDataReaderForDataType);
+                    var specializedDataReaderForDataType =
+                        genericDataReaderStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                    var specializedDataReaderField =
+                        SpecializeField(readMaskDelegateFieldReference, specializedDataReaderForDataType);
                     processor.Emit(OpCodes.Stsfld, specializedDataReaderField);
                 }
 
                 {
-                    CreateActionDelegateBitWriterToDataType(processor, dataMeta.writeFullMethodReference!, dataMeta.dataStructTypeReference);
+                    CreateActionDelegateBitWriterToDataType(processor, dataMeta.writeFullMethodReference!,
+                        dataMeta.dataStructTypeReference);
 
-                    var specializedDataWriterForDataType = genericDataWriterStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
-                    var specializedDataWriterField = SpecializeField(writeFullDelegateFieldReference, specializedDataWriterForDataType);
+                    var specializedDataWriterForDataType =
+                        genericDataWriterStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                    var specializedDataWriterField = SpecializeField(writeFullDelegateFieldReference,
+                        specializedDataWriterForDataType);
                     processor.Emit(OpCodes.Stsfld, specializedDataWriterField);
                 }
 
                 {
-                    CreateActionDelegateBitWriterToDataTypeAndMask(processor, dataMeta.writeMaskMethodReference!, dataMeta.dataStructTypeReference);
+                    CreateActionDelegateBitWriterToDataTypeAndMask(processor, dataMeta.writeMaskMethodReference!,
+                        dataMeta.dataStructTypeReference);
 
-                    var specializedDataWriterForDataType = genericDataWriterStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
-                    var specializedDataWriteMaskField = SpecializeField(writeMaskDelegateFieldReference, specializedDataWriterForDataType);
+                    var specializedDataWriterForDataType =
+                        genericDataWriterStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                    var specializedDataWriteMaskField = SpecializeField(writeMaskDelegateFieldReference,
+                        specializedDataWriterForDataType);
                     processor.Emit(OpCodes.Stsfld, specializedDataWriteMaskField);
                 }
             }
 
             foreach (var dataMeta in dataTypeInfos)
             {
-                CreateDataDifferDelegateInstance(processor, dataMeta.diffMethodReference!, dataMeta.dataStructTypeReference);
-                var specializedDataDifferForDataType = genericDataDifferStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
-                var specializedDataReaderField = SpecializeField(diffDelegateFieldReference, specializedDataDifferForDataType);
+                CreateDataDifferDelegateInstance(processor, dataMeta.diffMethodReference!,
+                    dataMeta.dataStructTypeReference);
+                var specializedDataDifferForDataType =
+                    genericDataDifferStaticClassReference.MakeGenericInstanceType(dataMeta.dataStructTypeReference);
+                var specializedDataReaderField =
+                    SpecializeField(diffDelegateFieldReference, specializedDataDifferForDataType);
                 processor.Emit(OpCodes.Stsfld, specializedDataReaderField);
             }
 
             {
                 CreateActionDelegateBitWriterUIntUIntDataReceiver(processor, generatedDataReceiverNewMethod!);
 
-                var dataStreamReceiverReceiveNewFieldInfo = typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveNew));
-                var dataStreamReceiverReceiveNewField = moduleDefinition.ImportReference(dataStreamReceiverReceiveNewFieldInfo);
+                var dataStreamReceiverReceiveNewFieldInfo =
+                    typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveNew));
+                var dataStreamReceiverReceiveNewField =
+                    moduleDefinition.ImportReference(dataStreamReceiverReceiveNewFieldInfo);
                 processor.Emit(OpCodes.Stsfld, dataStreamReceiverReceiveNewField);
             }
 
             {
                 CreateActionDelegateBitWriterUIntUIntDataReceiver(processor, generatedDataReceiverUpdateMethod!);
 
-                var dataStreamReceiverReceiveUpdateFieldInfo = typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveUpdate));
-                var dataStreamReceiverReceiveUpdateField = moduleDefinition.ImportReference(dataStreamReceiverReceiveUpdateFieldInfo);
+                var dataStreamReceiverReceiveUpdateFieldInfo =
+                    typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveUpdate));
+                var dataStreamReceiverReceiveUpdateField =
+                    moduleDefinition.ImportReference(dataStreamReceiverReceiveUpdateFieldInfo);
                 processor.Emit(OpCodes.Stsfld, dataStreamReceiverReceiveUpdateField);
             }
 
             {
                 CreateActionDelegateUIntUIntDataReceiver(processor, generatedDataReceiverDestroyMethod!);
 
-                var dataStreamReceiverReceiveDestroyFieldInfo = typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveDestroy));
-                var dataStreamReceiverReceiveDestroyField = moduleDefinition.ImportReference(dataStreamReceiverReceiveDestroyFieldInfo);
+                var dataStreamReceiverReceiveDestroyFieldInfo =
+                    typeof(DataStreamReceiver).GetField(nameof(DataStreamReceiver.receiveDestroy));
+                var dataStreamReceiverReceiveDestroyField =
+                    moduleDefinition.ImportReference(dataStreamReceiverReceiveDestroyFieldInfo);
                 processor.Emit(OpCodes.Stsfld, dataStreamReceiverReceiveDestroyField);
             }
 
-            GenerateInputIdArrays(processor);
-            GenerateGhostIdArrays(processor);
-            GenerateLogicsIdArrays(processor);
+            //GenerateInputIdArrays(processor);
+            //GenerateGhostIdArrays(processor);
+            //GenerateLogicsIdArrays(processor);
 
             processor.Emit(OpCodes.Ret);
 
             AddGeneratedMethod(initOnLoadMethod);
         }
 
+        /*
         void GenerateInputIdArrays(ILProcessor processor)
         {
             GenerateIdArrayAndSet(processor, typeof(DataInfo).GetField(nameof(DataInfo.inputComponentTypeIds))!,
@@ -692,7 +775,7 @@ namespace Piot.Blitser.Generator
         void GenerateGhostIdArrays(ILProcessor processor)
         {
             GenerateIdArrayAndSet(processor, typeof(DataInfo).GetField(nameof(DataInfo.ghostComponentTypeIds))!,
-                ghosts.Select(dataClassMeta => dataClassMeta.uniqueId).ToArray());
+                replicatedComponents.Select(dataClassMeta => dataClassMeta.uniqueId).ToArray());
         }
 
         void GenerateLogicsIdArrays(ILProcessor processor)
@@ -700,13 +783,16 @@ namespace Piot.Blitser.Generator
             GenerateIdArrayAndSet(processor, typeof(DataInfo).GetField(nameof(DataInfo.logicComponentTypeIds))!,
                 logics.Select(dataClassMeta => dataClassMeta.uniqueId).ToArray());
         }
+        */
 
         void GenerateIdArrayAndSet(ILProcessor processor, FieldInfo fieldInfo, IReadOnlyCollection<uint> dataIds)
         {
             if (dataIds.Count == 0)
             {
-                throw new Exception("No dataids to set!");
+                //throw new Exception("No dataids to set!");
             }
+
+
             AddDataIdsArray(processor, dataIds);
 
             var fieldReference = moduleDefinition.ImportReference(fieldInfo);
@@ -731,10 +817,12 @@ namespace Piot.Blitser.Generator
 
         public MethodDefinition CreateSerializeMaskRefMethod(DataClassMeta dataTypeInfo, ILog log)
         {
-            var serializeMaskMethod = CreatePublicStaticMethodForTypeVoidReturn("SerializeMaskRef", dataTypeInfo.resolvedDataStructType);
+            var serializeMaskMethod =
+                CreatePublicStaticMethodForTypeVoidReturn("SerializeMaskRef", dataTypeInfo.resolvedDataStructType);
 
             serializeMaskMethod.Parameters.Add(new("writer", ParameterAttributes.None, bitWriterInterfaceReference));
-            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructType);
+            var dataReferenceParameter =
+                new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructType);
             serializeMaskMethod.Parameters.Add(dataReferenceParameter);
 
             var uint32Reference = moduleDefinition.ImportReference(typeof(uint));
@@ -745,7 +833,7 @@ namespace Piot.Blitser.Generator
 
             var processor = serializeMaskMethod.Body.GetILProcessor();
 
-            var maskBitCount = dataTypeInfo.resolvedDataStructType.Fields.Count;
+            var maskBitCount = dataTypeInfo.resolvedFieldsToSerialize.Count();
 
             var shouldUseBitMaskChecks = maskBitCount > 1;
 
@@ -753,13 +841,13 @@ namespace Piot.Blitser.Generator
             {
                 processor.Emit(OpCodes.Ldarg_0);
                 processor.Emit(OpCodes.Ldarg_2);
-                processor.Emit(OpCodes.Ldc_I4, maskBitCount);
+                processor.Emit(OpCodes.Ldc_I4, (byte)maskBitCount);
                 processor.Emit(OpCodes.Callvirt, dataTypeWriter.WriteBitsMethod);
             }
 
             var index = 0;
             Instruction? skipLabel = null;
-            foreach (var field in dataTypeInfo.resolvedDataStructType.Fields)
+            foreach (var field in dataTypeInfo.resolvedFieldsToSerialize)
             {
                 if (shouldUseBitMaskChecks && skipLabel is not null)
                 {
@@ -811,10 +899,12 @@ namespace Piot.Blitser.Generator
 
         MethodDefinition CreateSerializeFullMethod(DataClassMeta dataTypeInfo, ILog log)
         {
-            var serializeFullMethod = CreatePublicStaticMethodForTypeVoidReturn("SerializeFull", dataTypeInfo.resolvedDataStructType);
+            var serializeFullMethod =
+                CreatePublicStaticMethodForTypeVoidReturn("SerializeFull", dataTypeInfo.resolvedDataStructType);
 
             serializeFullMethod.Parameters.Add(new("writer", ParameterAttributes.None, bitWriterInterfaceReference));
-            var dataReferenceParameter = new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructType);
+            var dataReferenceParameter =
+                new ParameterDefinition("data", ParameterAttributes.None, dataTypeInfo.resolvedDataStructType);
             serializeFullMethod.Parameters.Add(dataReferenceParameter);
 
             serializeFullMethod.Body.InitLocals = true;
@@ -824,7 +914,7 @@ namespace Piot.Blitser.Generator
             VerifyDataStruct(dataTypeInfo.resolvedDataStructType, log);
 
             var index = 0;
-            foreach (var field in dataTypeInfo.resolvedDataStructType.Fields)
+            foreach (var field in dataTypeInfo.resolvedFieldsToSerialize)
             {
                 // IBitReader
                 processor.Emit(OpCodes.Ldarg_0);
@@ -877,7 +967,8 @@ namespace Piot.Blitser.Generator
             }
         }
 
-        void EmitCompareStructFields(ILProcessor processor, FieldReference getRootFieldReference, Instruction modifyMaskLabel, ILog log)
+        void EmitCompareStructFields(ILProcessor processor, FieldReference getRootFieldReference,
+            Instruction modifyMaskLabel, ILog log)
         {
             var rootFieldTypeReference = moduleDefinition.ImportReference(getRootFieldReference.FieldType);
             var resolvedFieldType = rootFieldTypeReference.Resolve();
@@ -895,7 +986,8 @@ namespace Piot.Blitser.Generator
 
                 if (!TypeCheck.IsAllowedBlittablePrimitive(fieldDefinition.FieldType))
                 {
-                    throw new($"Illegal type layers of structs are not allowed! {resolvedFieldType.FullName} {fieldDefinition.FieldType.FullName} {fieldDefinition.Name} {fieldDefinition.IsDefinition} {fieldDefinition.IsSpecialName}");
+                    throw new(
+                        $"Illegal type layers of structs are not allowed! {resolvedFieldType.FullName} {fieldDefinition.FieldType.FullName} {fieldDefinition.Name} {fieldDefinition.IsDefinition} {fieldDefinition.IsSpecialName}");
                 }
 
                 var fieldReference = moduleDefinition.ImportReference(fieldDefinition);
@@ -916,7 +1008,6 @@ namespace Piot.Blitser.Generator
                 processor.Emit(OpCodes.Ldarg_1);
                 processor.Emit(OpCodes.Ldfld, getRootFieldReference);
                 processor.Emit(OpCodes.Ldfld, fieldReference);
-
             }
         }
 
@@ -930,9 +1021,11 @@ namespace Piot.Blitser.Generator
                 MethodAttributes.HideBySig,
                 uint32Reference);
 
-            var firstDataReferenceParameter = new ParameterDefinition("a", ParameterAttributes.In, dataTypeInfo.resolvedDataStructType);
+            var firstDataReferenceParameter =
+                new ParameterDefinition("a", ParameterAttributes.In, dataTypeInfo.resolvedDataStructType);
             diffMethod.Parameters.Add(firstDataReferenceParameter);
-            var secondDataReferenceParameter = new ParameterDefinition("b", ParameterAttributes.In, dataTypeInfo.resolvedDataStructType);
+            var secondDataReferenceParameter =
+                new ParameterDefinition("b", ParameterAttributes.In, dataTypeInfo.resolvedDataStructType);
             diffMethod.Parameters.Add(secondDataReferenceParameter);
 
             var maskVariable = new VariableDefinition(uint32Reference);
@@ -946,14 +1039,14 @@ namespace Piot.Blitser.Generator
 
             VerifyDataStruct(dataTypeInfo.resolvedDataStructType, log);
 
-            if (dataTypeInfo.resolvedDataStructType.Fields.Count != 0)
+            if (dataTypeInfo.resolvedFieldsToSerialize.Count() != 0)
             {
                 processor.Emit(OpCodes.Stloc_0);
 
                 var index = 0;
 
                 var skipLabel = processor.Create(OpCodes.Ldarg_0);
-                foreach (var field in dataTypeInfo.resolvedDataStructType.Fields)
+                foreach (var field in dataTypeInfo.resolvedFieldsToSerialize)
                 {
                     processor.Append(skipLabel);
 
@@ -970,14 +1063,13 @@ namespace Piot.Blitser.Generator
 
                         processor.Emit(OpCodes.Ldarg_1);
                         processor.Emit(OpCodes.Ldfld, field);
-
                     }
                     else
                     {
                         EmitCompareStructFields(processor, field, modifyMaskLabel, log);
                     }
 
-                    var isLastField = index == dataTypeInfo.resolvedDataStructType.Fields.Count - 1;
+                    var isLastField = index == dataTypeInfo.resolvedFieldsToSerialize.Count() - 1;
                     skipLabel = processor.Create(isLastField ? OpCodes.Ldloc_0 : OpCodes.Ldarg_0);
 
                     processor.Emit(OpCodes.Beq_S, skipLabel);
@@ -1002,6 +1094,7 @@ namespace Piot.Blitser.Generator
 
             return diffMethod;
         }
+
         bool VerifyDataField(FieldDefinition field, ILog log)
         {
             if (field.IsLiteral && field.IsStatic)
@@ -1043,13 +1136,15 @@ namespace Piot.Blitser.Generator
                 MethodAttributes.HideBySig,
                 voidReturnReference);
 
-            var bitReaderParameter = new ParameterDefinition("reader", ParameterAttributes.None, bitReaderInterfaceReference);
+            var bitReaderParameter =
+                new ParameterDefinition("reader", ParameterAttributes.None, bitReaderInterfaceReference);
             dataReceiveNewMethod.Parameters.Add(bitReaderParameter);
             var entityIdParameter = new ParameterDefinition("entityId", ParameterAttributes.None, uint32Reference);
             dataReceiveNewMethod.Parameters.Add(entityIdParameter);
             var dataTypeIdParameter = new ParameterDefinition("dataTypeId", ParameterAttributes.None, uint32Reference);
             dataReceiveNewMethod.Parameters.Add(dataTypeIdParameter);
-            var dataReceiverInterfaceParameter = new ParameterDefinition("receiver", ParameterAttributes.None, dataReceiverInterfaceReference);
+            var dataReceiverInterfaceParameter =
+                new ParameterDefinition("receiver", ParameterAttributes.None, dataReceiverInterfaceReference);
             dataReceiveNewMethod.Parameters.Add(dataReceiverInterfaceParameter);
 
             dataReceiveNewMethod.Body.InitLocals = false;
@@ -1066,7 +1161,8 @@ namespace Piot.Blitser.Generator
             // load dataTypeId
             processor.Emit(OpCodes.Ldarg_2);
 
-            var (labels, defaultLabel) = CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_3, OpCodes.Ret);
+            var (labels, defaultLabel) =
+                CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_3, OpCodes.Ret);
 
             processor.Emit(OpCodes.Ret);
 
@@ -1082,11 +1178,14 @@ namespace Piot.Blitser.Generator
                 processor.Emit(OpCodes.Ldarg_0);
 
 
-                var specializedDataStreamReaderCreateAndReadReference = SpecializeMethod(genericDataStreamReaderCreateAndReadReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataStreamReaderCreateAndReadReference =
+                    SpecializeMethod(genericDataStreamReaderCreateAndReadReference,
+                        dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Call, specializedDataStreamReaderCreateAndReadReference);
 
 
-                var specializedDataReceiverCreateNewMethodReference = SpecializeMethod(dataReceiverCreateNewMethodReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataReceiverCreateNewMethodReference =
+                    SpecializeMethod(dataReceiverCreateNewMethodReference, dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Callvirt, specializedDataReceiverCreateNewMethodReference);
 
 
@@ -1120,7 +1219,8 @@ namespace Piot.Blitser.Generator
             // load dataTypeId
             processor.Emit(OpCodes.Ldarg_2);
 
-            var (labels, defaultLabel) = CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_3, OpCodes.Ret);
+            var (labels, defaultLabel) =
+                CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_3, OpCodes.Ret);
 
             processor.Emit(OpCodes.Ret);
 
@@ -1137,7 +1237,8 @@ namespace Piot.Blitser.Generator
                 // EntityId
                 processor.Emit(OpCodes.Ldarg_1);
 
-                var specializedDataReceiverGetMethodReference = SpecializeMethod(dataReceiverGrabOrCreateMethodReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataReceiverGetMethodReference =
+                    SpecializeMethod(dataReceiverGrabOrCreateMethodReference, dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Callvirt, specializedDataReceiverGetMethodReference);
 
                 // The stack now has the DataType struct on top of the stack
@@ -1155,7 +1256,8 @@ namespace Piot.Blitser.Generator
                 // take the address of the local variable and push on stack
                 processor.Emit(OpCodes.Ldloca_S, (byte)index);
 
-                var specializedDataStreamReaderReadMaskReference = SpecializeMethod(genericDataStreamReaderReadMaskMethodReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataStreamReaderReadMaskReference = SpecializeMethod(
+                    genericDataStreamReaderReadMaskMethodReference, dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Call, specializedDataStreamReaderReadMaskReference);
 
                 // Stack has the previously pushed IDataReceiver and the mask
@@ -1171,7 +1273,8 @@ namespace Piot.Blitser.Generator
                 // take the address of the local variable and push on stack
                 processor.Emit(OpCodes.Ldloc_S, (byte)index);
 
-                var specializedDataReceiverUpdateMethodReference = SpecializeMethod(dataReceiverUpdateMethodReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataReceiverUpdateMethodReference = SpecializeMethod(dataReceiverUpdateMethodReference,
+                    dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Callvirt, specializedDataReceiverUpdateMethodReference);
 #endif
                 processor.Emit(OpCodes.Ret);
@@ -1187,7 +1290,8 @@ namespace Piot.Blitser.Generator
             return dataReceiveNewMethod;
         }
 
-        (Instruction[], Instruction) CreateEnumAndReturnLabels(IEnumerable<DataClassMeta> dataClassMetas, ILProcessor processor, OpCode startLabelOpCode, OpCode startDefaultOpCode)
+        (Instruction[], Instruction) CreateEnumAndReturnLabels(IEnumerable<DataClassMeta> dataClassMetas,
+            ILProcessor processor, OpCode startLabelOpCode, OpCode startDefaultOpCode)
         {
             var labels = new Instruction[dataClassMetas.Count() + 1];
             var labelIndex = 0;
@@ -1221,7 +1325,8 @@ namespace Piot.Blitser.Generator
             dataReceiveDestroyMethod.Parameters.Add(entityIdParameter);
             var dataTypeIdParameter = new ParameterDefinition("dataTypeId", ParameterAttributes.None, uint32Reference);
             dataReceiveDestroyMethod.Parameters.Add(dataTypeIdParameter);
-            var dataReceiverInterfaceParameter = new ParameterDefinition("receiver", ParameterAttributes.None, dataReceiverInterfaceReference);
+            var dataReceiverInterfaceParameter =
+                new ParameterDefinition("receiver", ParameterAttributes.None, dataReceiverInterfaceReference);
             dataReceiveDestroyMethod.Parameters.Add(dataReceiverInterfaceParameter);
 
             dataReceiveDestroyMethod.Body.InitLocals = false;
@@ -1231,7 +1336,8 @@ namespace Piot.Blitser.Generator
             // load dataTypeId
             processor.Emit(OpCodes.Ldarg_1);
 
-            var (labels, defaultLabel) = CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_2, OpCodes.Ret);
+            var (labels, defaultLabel) =
+                CreateEnumAndReturnLabels(dataClassMetas, processor, OpCodes.Ldarg_2, OpCodes.Ret);
 
             processor.Emit(OpCodes.Ret);
 
@@ -1244,7 +1350,8 @@ namespace Piot.Blitser.Generator
                 // EntityId
                 processor.Emit(OpCodes.Ldarg_0);
 
-                var specializedDataReceiverDestroyMethodReference = SpecializeMethod(dataReceiverDestroyMethodReference, dataTypeInfo.dataStructTypeReference);
+                var specializedDataReceiverDestroyMethodReference = SpecializeMethod(dataReceiverDestroyMethodReference,
+                    dataTypeInfo.dataStructTypeReference);
                 processor.Emit(OpCodes.Callvirt, specializedDataReceiverDestroyMethodReference);
 
                 processor.Emit(OpCodes.Ret);
@@ -1265,6 +1372,7 @@ namespace Piot.Blitser.Generator
         {
             public readonly TypeReference dataStructTypeReference;
             public readonly TypeDefinition resolvedDataStructType;
+            public readonly IEnumerable<FieldDefinition> resolvedFieldsToSerialize;
             public readonly ByReferenceType resolvedDataStructTypeByReference;
 
             public readonly uint uniqueId;
@@ -1275,19 +1383,20 @@ namespace Piot.Blitser.Generator
             public MethodReference? writeFullMethodReference;
             public MethodReference? writeMaskMethodReference;
 
-            public DataClassMeta( uint uniqueId, TypeReference typeReference, TypeDefinition resolvedDataStructType)
+            public DataClassMeta(uint uniqueId, TypeReference typeReference, TypeDefinition resolvedDataStructType,
+                IEnumerable<FieldDefinition> resolvedFieldsToSerialize)
             {
                 this.uniqueId = uniqueId;
                 dataStructTypeReference = typeReference;
 
                 this.resolvedDataStructType = resolvedDataStructType;
+                this.resolvedFieldsToSerialize = resolvedFieldsToSerialize;
                 resolvedDataStructTypeByReference = new(resolvedDataStructType);
             }
         }
 
         struct AnyStruct
         {
-
         }
     }
 }

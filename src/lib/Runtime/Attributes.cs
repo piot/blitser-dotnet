@@ -8,7 +8,7 @@ using System;
 namespace Piot.Blitser
 {
     [AttributeUsage(AttributeTargets.Struct)]
-    public sealed class LogicAttribute : Attribute
+    public sealed class ReplicateComponentAttribute : Attribute
     {
         public bool generate { get; set; }
     }
@@ -18,21 +18,10 @@ namespace Piot.Blitser
     {
         public bool generate { get; set; }
     }
-
-    [AttributeUsage(AttributeTargets.Struct)]
-    public sealed class GhostAttribute : Attribute
+    
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class ReplicateAttribute : Attribute
     {
         public bool generate { get; set; }
-    }
-
-    [AttributeUsage(AttributeTargets.Struct)]
-    public sealed class InputAttribute : Attribute
-    {
-        public bool generate { get; set; }
-    }
-
-    [AttributeUsage(AttributeTargets.Struct)]
-    public sealed class ShortLivedEventAttribute : Attribute
-    {
     }
 }

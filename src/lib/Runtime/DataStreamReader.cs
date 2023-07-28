@@ -9,7 +9,7 @@ namespace Piot.Blitser
 {
     public static class DataStreamReader
     {
-        public static T CreateAndRead<T>(IBitReader bitReader) where T : struct
+        public static T CreateAndRead<T>(IBitReader bitReader) where T : unmanaged
         {
             if (DataReader<T>.read is null)
             {
@@ -19,7 +19,7 @@ namespace Piot.Blitser
             return DataReader<T>.read(bitReader);
         }
 
-        public static uint ReadMask<T>(IBitReader bitReader, ref T data) where T : struct
+        public static uint ReadMask<T>(IBitReader bitReader, ref T data) where T : unmanaged
         {
             if (DataReader<T>.readMask is null)
             {

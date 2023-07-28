@@ -7,6 +7,6 @@ namespace Piot.Blitser
 {
     public interface IEventReceiver
     {
-        public void ReceiveEvent<T>(in T eventData) where T : struct;
+        public void ReceiveEvent<T>(in T eventData) where T : unmanaged;
     }
 }

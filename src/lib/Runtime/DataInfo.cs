@@ -42,7 +42,7 @@ namespace Piot.Blitser
         }
     }
 
-    public static class DataTypeInfo<T> where T : struct
+    public static class DataTypeInfo<T> where T : unmanaged
     {
         public static DataType dataType;
     }

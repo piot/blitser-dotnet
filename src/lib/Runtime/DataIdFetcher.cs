@@ -7,7 +7,7 @@ namespace Piot.Blitser
 {
     public static class DataIdFetcher
     {
-        public static ushort Id<T>() where T : struct
+        public static ushort Id<T>() where T : unmanaged
         {
             return DataIdLookup<T>.value;
         }
